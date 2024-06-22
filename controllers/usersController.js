@@ -1,4 +1,4 @@
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import gravatar from "gravatar";
 import jwt from "jsonwebtoken";
 import "dotenv/config";
@@ -7,10 +7,12 @@ import path from "path";
 import fs from "fs/promises";
 import { User } from "../models/usersModel.js";
 // prettier-ignore
-import { signupValidation, subscriptionValidation } from "../validations/validation.js";
+import { emailValidation, signupValidation, subscriptionValidation } from "../validations/validation.js";
 import { httpError } from "../helpers/httpError.js";
+import { sendEmail } from "../helpers/sendEmail.js";
+import { v4 as uuid4 } from "uuid";
 
-const { SECRET_KEY } = process.env;
+const { SECRET_KEY, PORT } = process.env;
 
 const signupUser = async (req, res) => {
   const { email, password } = req.body;
@@ -29,13 +31,27 @@ const signupUser = async (req, res) => {
 
   const avatarURL = gravatar.url(email, { protocol: "http" });
 
-  const newUser = await User.create({ email, password: hashPassword, avatarURL });
+  const verificationToken = uuid4();
+
+  const newUser = await User.create({
+    email,
+    password: hashPassword,
+    avatarURL,
+    verificationToken,
+  });
+
+  await sendEmail({
+    to: email,
+    subject: "Action Required: Verify Your Email",
+    html: `<a target="_blank" href="http://localhost:${PORT}/api/users/verify/${verificationToken}">Click to verify email</a>`,
+  });
 
   res.status(201).json({
     user: {
       email: newUser.email,
       subscription: newUser.subscription,
       avatarURL: newUser.avatarURL,
+      verificationToken,
     },
   });
 };
@@ -63,7 +79,7 @@ const loginUser = async (req, res) => {
 
   await User.findByIdAndUpdate(user._id, { token });
 
-   res.status(200).json({
+ res.status(200).json({
     token: token,
     user: {
       email: user.email,
@@ -112,7 +128,6 @@ const updateAvatar = async (req, res) => {
   const { path: oldPath, originalname } = req.file;
 
   await Jimp.read(oldPath).then((image) =>
-    // image.resize(250, 250).write(oldPath)
     image.cover(250, 250).write(oldPath)
   );
 
@@ -129,5 +144,51 @@ const updateAvatar = async (req, res) => {
   res.status(200).json({ avatarURL });
 };
 
+const verifyEmail = async (req, res) => {
+  const { verificationToken } = req.params;
+
+  const user = await User.findOne({ verificationToken });
+
+  if (!user) {
+    throw httpError(400, "User not found");
+  }
+
+  await User.findByIdAndUpdate(user._id, {
+    verify: true,
+    verificationToken: null,
+  });
+
+  res.json({
+    message: "Verification successful",
+  });
+};
+
+const resendVerifyEmail = async (req, res) => {
+  const { email } = req.body;
+
+  const { error } = emailValidation.validate(req.body);
+  if (error) {
+    throw httpError(400, error.message);
+  }
+
+  const user = await User.findOne({ email });
+
+  if (!user) {
+    throw httpError(404, "The provided email address could not be found");
+  }
+
+  if (user.verify) {
+    throw httpError(400, "Verification has already been passed");
+  }
+
+  await sendEmail({
+    to: email,
+    subject: "Action Required: Verify Your Email",
+    html: `<a target="_blank" href="http://localhost:${PORT}/api/users/verify/${user.verificationToken}">Click to verify email</a>`,
+  });
+
+  res.json({ message: "Verification email sent" });
+};
+
 // prettier-ignore
-export { signupUser, loginUser, logoutUser, getCurrentUsers, updateUserSubscription, updateAvatar };
+export { signupUser, loginUser, logoutUser, getCurrentUsers, updateUserSubscription, updateAvatar, verifyEmail, resendVerifyEmail};

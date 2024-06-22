@@ -7,8 +7,8 @@ import { jest } from "@jest/globals";
 
 describe("Test @POST /api/users/login", () => {
   const signInData = {
-    email: "marvin@example.com",
-    password: "examplepassword",
+    email: "devjsm.test@gmail.com",
+    password: "molos098765",
   };
 
   const mockUserId = "mockUserId";
@@ -20,7 +20,6 @@ describe("Test @POST /api/users/login", () => {
   };
 
   beforeAll(() => {
-    // Mock User.findOne
     jest.spyOn(User, "findOne").mockImplementation(({ email }) => {
       if (email === signInData.email) {
         return Promise.resolve(mockUser);
@@ -28,7 +27,6 @@ describe("Test @POST /api/users/login", () => {
       return Promise.resolve(null);
     });
 
-    // Mock bcrypt.compare
     jest
       .spyOn(bcrypt, "compare")
       .mockImplementation((password, hashedPassword) => {
@@ -38,10 +36,8 @@ describe("Test @POST /api/users/login", () => {
         );
       });
 
-    // Mock jwt.sign
     jest.spyOn(jwt, "sign").mockImplementation(() => "mockJwtToken");
 
-    // Mock User.findByIdAndUpdate
     jest.spyOn(User, "findByIdAndUpdate").mockImplementation((id, update) => {
       if (id === mockUserId) {
         return Promise.resolve({ ...mockUser, ...update });
@@ -64,18 +60,14 @@ describe("Test @POST /api/users/login", () => {
     console.log("Response body:", response.body);
     console.log("Response body USER:", response.body.user);
 
-    // Response must have status code 200
     expect(response.status).toBe(200);
 
-    // The token must be returned in the response
     expect(response.body).toHaveProperty("token", "mockJwtToken");
 
     const { user } = response.body;
 
-    // The response should return a user object with 2 fields email and subscription
     expect(user).toHaveProperty("email" && "subscription");
 
-    // email and subscription, having the data type String
     expect(user.email && user.subscription).toEqual(expect.any(String));
   });
 });
